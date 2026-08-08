@@ -1,7 +1,7 @@
 # Add project specific ProGuard rules here.
 
 # Preserve Line Numbers for Debugging
--keepattributes SourceFile,LineNumberTable
+-keepattributes SourceFile,LineNumberTable,*Annotation*,InnerClasses,EnclosingMethod
 -renamesourcefileattribute SourceFile
 
 # --- Room Database Keep Rules ---
@@ -16,9 +16,13 @@
 -keepclassmembers class * extends androidx.compose.ui.node.LayoutNode { *; }
 -dontwarn androidx.compose.**
 
-# --- Data Entities & Serialization Models ---
--keep class com.example.data.entity.** { *; }
--keepclassmembers class com.example.data.entity.** { *; }
+# --- Data Entities, Repository & API Models ---
+-keep class com.example.data.** { *; }
+-keepclassmembers class com.example.data.** { *; }
+
+# --- Security & Keystore Utilities ---
+-keep class com.example.data.api.security.** { *; }
+-keep class com.example.util.SecurityUtils { *; }
 
 # --- Moshi & Retrofit Keep Rules ---
 -keep class com.squareup.moshi.** { *; }
@@ -27,4 +31,8 @@
 }
 -dontwarn retrofit2.**
 -keep class retrofit2.** { *; }
+-keepclassmembers class * {
+    @retrofit2.http.** *;
+}
+
 
