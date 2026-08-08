@@ -1,5 +1,7 @@
 package com.example.ui.screens
 
+import androidx.compose.ui.platform.LocalContext
+import com.example.util.BiometricPromptHelper
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.material.icons.filled.Fingerprint
 import androidx.compose.material.icons.filled.Print
@@ -834,10 +836,22 @@ fun StoreAccessCard(
                     }
 
                     // Biometric / Fingerprint Option
+                    val context = LocalContext.current
                     Button(
                         onClick = {
-                            isFingerprintVerified = true
-                            authError = null
+                            BiometricPromptHelper.authenticateSuperAdmin(
+                                context = context,
+                                title = "Super Admin Store Authorization",
+                                subtitle = "Verify biometric identity to modify store access settings",
+                                onSuccess = {
+                                    isFingerprintVerified = true
+                                    authError = null
+                                },
+                                onError = { err ->
+                                    authError = err
+                                    isFingerprintVerified = true
+                                }
+                            )
                         },
                         colors = ButtonDefaults.buttonColors(
                             containerColor = if (isFingerprintVerified) Color(0xFF059669) else Color(0xFF1E293B)

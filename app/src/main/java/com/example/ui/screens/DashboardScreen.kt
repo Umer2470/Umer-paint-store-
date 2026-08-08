@@ -60,6 +60,14 @@ import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Storefront
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Cancel
+import androidx.compose.material.icons.filled.AccessTime
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -99,12 +107,14 @@ import androidx.compose.ui.unit.sp
 import com.example.R
 import com.example.data.entity.Product
 import com.example.data.entity.Sale
+import com.example.data.entity.UserAccount
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Storefront
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.ui.text.style.TextOverflow
+import com.example.ui.components.AnalyticsChartsWidget
 import com.example.ui.components.ShopLogoAvatar
 import com.example.ui.navigation.Screen
 import com.example.ui.viewmodel.StoreViewModel
@@ -146,6 +156,8 @@ fun DashboardScreen(
     val lowStockItems by viewModel.lowStockProducts.collectAsState()
     val allProducts by viewModel.allProducts.collectAsState()
     val isRefreshing by viewModel.isRefreshing.collectAsState()
+    val salesTrend by viewModel.salesTrend7Days.collectAsState()
+    val topCategories by viewModel.topCategoriesData.collectAsState()
 
     val infiniteTransition = rememberInfiniteTransition(label = "RefreshRotation")
     val refreshRotationAngle by infiniteTransition.animateFloat(
@@ -175,6 +187,9 @@ fun DashboardScreen(
 
     val allUsers by viewModel.allUsers.collectAsState()
     val allActivityLogs by viewModel.allActivityLogs.collectAsState()
+
+    val isAttendanceMinimized by viewModel.isAttendanceMinimized.collectAsState()
+    val isAttendanceHidden by viewModel.isAttendanceHidden.collectAsState()
 
     var searchQuery by remember { mutableStateOf("") }
 
@@ -218,8 +233,23 @@ fun DashboardScreen(
     val totalCustomerUdhaar = allCustomers.sumOf { it.balance }
     val totalSupplierPayable = allSuppliers.sumOf { it.payableBalance }
 
-    val totalEmployees = allUsers.count { it.role != "SUPER_ADMIN" }
-    val activeStaffCount = if (totalEmployees > 0) totalEmployees else 1
+    val staffUsers = remember(allUsers) {
+        allUsers.filter { it.role != "SUPER_ADMIN" }.ifEmpty { allUsers }
+    }
+    val totalStaff = staffUsers.size
+    val activeStaffCount = if (totalStaff > 0) staffUsers.count { it.isActive } else 1
+    val presentCount = staffUsers.count { it.isActive }
+    val absentCount = (totalStaff - presentCount).coerceAtLeast(0)
+
+    val timeFormatShort = remember { SimpleDateFormat("hh:mm a", Locale.getDefault()) }
+    val todayLogs = remember(allActivityLogs, startOfDay) {
+        allActivityLogs.filter { it.timestamp >= startOfDay }
+    }
+    val earliestLogToday = todayLogs.minByOrNull { it.timestamp }
+    val latestLogToday = todayLogs.maxByOrNull { it.timestamp }
+
+    val checkInTimeText = earliestLogToday?.let { timeFormatShort.format(Date(it.timestamp)) } ?: "09:00 AM"
+    val checkOutTimeText = latestLogToday?.let { timeFormatShort.format(Date(it.timestamp)) } ?: "06:00 PM"
 
     // Quick Search filtered results
     val filteredProducts = if (searchQuery.isNotBlank()) {
@@ -867,35 +897,97 @@ fun DashboardScreen(
                     }
 
                     // Row 4: Total Suppliers & Employee Attendance Summary
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        LargeMetricCard(
-                            title = "Total Suppliers",
-                            value = "${allSuppliers.size}",
-                            subtitle = "Payable: ${settings.currencySymbol} ${totalSupplierPayable.toInt()}",
-                            icon = Icons.Default.Apartment,
-                            iconBg = Color(0xFFE0F2FE),
-                            iconTint = Color(0xFF0284C7),
-                            accentBorder = Color(0xFF0284C7),
-                            modifier = Modifier.weight(1f),
-                            onClick = { onNavigate(Screen.Suppliers.route) }
-                        )
+                    if (isAttendanceHidden) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            LargeMetricCard(
+                                title = "Total Suppliers",
+                                value = "${allSuppliers.size}",
+                                subtitle = "Payable: ${settings.currencySymbol} ${totalSupplierPayable.toInt()}",
+                                icon = Icons.Default.Apartment,
+                                iconBg = Color(0xFFE0F2FE),
+                                iconTint = Color(0xFF0284C7),
+                                accentBorder = Color(0xFF0284C7),
+                                modifier = Modifier.fillMaxWidth(),
+                                onClick = { onNavigate(Screen.Suppliers.route) }
+                            )
+                        }
 
-                        LargeMetricCard(
-                            title = "Employee Attendance",
-                            value = "$activeStaffCount Staff Active",
-                            subtitle = "Attendance & Roles",
-                            icon = Icons.Default.Schedule,
-                            iconBg = Color(0xFFEDE9FE),
-                            iconTint = Color(0xFF6366F1),
-                            accentBorder = Color(0xFF6366F1),
-                            modifier = Modifier.weight(1f),
-                            onClick = { onNavigate(Screen.UserManagement.route) }
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        ShowAttendanceBanner(
+                            onShow = { viewModel.setAttendanceHidden(false) }
+                        )
+                    } else if (isAttendanceMinimized) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            LargeMetricCard(
+                                title = "Total Suppliers",
+                                value = "${allSuppliers.size}",
+                                subtitle = "Payable: ${settings.currencySymbol} ${totalSupplierPayable.toInt()}",
+                                icon = Icons.Default.Apartment,
+                                iconBg = Color(0xFFE0F2FE),
+                                iconTint = Color(0xFF0284C7),
+                                accentBorder = Color(0xFF0284C7),
+                                modifier = Modifier.weight(1f),
+                                onClick = { onNavigate(Screen.Suppliers.route) }
+                            )
+
+                            AttendanceMinimizedMetricCard(
+                                activeStaffCount = activeStaffCount,
+                                presentCount = presentCount,
+                                absentCount = absentCount,
+                                modifier = Modifier.weight(1f),
+                                onExpand = { viewModel.setAttendanceMinimized(false) },
+                                onHide = { viewModel.setAttendanceHidden(true) },
+                                onClick = { viewModel.setAttendanceMinimized(false) }
+                            )
+                        }
+                    } else {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            LargeMetricCard(
+                                title = "Total Suppliers",
+                                value = "${allSuppliers.size}",
+                                subtitle = "Payable: ${settings.currencySymbol} ${totalSupplierPayable.toInt()}",
+                                icon = Icons.Default.Apartment,
+                                iconBg = Color(0xFFE0F2FE),
+                                iconTint = Color(0xFF0284C7),
+                                accentBorder = Color(0xFF0284C7),
+                                modifier = Modifier.fillMaxWidth(),
+                                onClick = { onNavigate(Screen.Suppliers.route) }
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        AttendanceExpandedWidgetCard(
+                            staffUsers = staffUsers,
+                            presentCount = presentCount,
+                            absentCount = absentCount,
+                            checkInTimeText = checkInTimeText,
+                            checkOutTimeText = checkOutTimeText,
+                            onMinimize = { viewModel.setAttendanceMinimized(true) },
+                            onHide = { viewModel.setAttendanceHidden(true) },
+                            onManageClick = { onNavigate(Screen.UserManagement.route) }
                         )
                     }
                 }
+            }
+
+            // 4B. GRAPHICAL SALES TRENDS & ANALYTICS WIDGET (7-Day Daily Sales & Category Distribution)
+            item {
+                AnalyticsChartsWidget(
+                    salesTrend = salesTrend,
+                    topCategories = topCategories,
+                    currencySymbol = settings.currencySymbol
+                )
             }
 
             // 5. MODULES SECTION HEADER
@@ -1766,4 +1858,444 @@ fun LowStockBreakdownDialog(
             }
         }
     )
+}
+
+@Composable
+fun AttendanceMinimizedMetricCard(
+    activeStaffCount: Int,
+    presentCount: Int,
+    absentCount: Int,
+    modifier: Modifier = Modifier,
+    onExpand: () -> Unit,
+    onHide: () -> Unit,
+    onClick: () -> Unit
+) {
+    Card(
+        modifier = modifier
+            .height(118.dp)
+            .clickable { onClick() },
+        shape = RoundedCornerShape(22.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        border = BorderStroke(1.2.dp, Color(0xFF6366F1).copy(alpha = 0.4f)),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(12.dp),
+            verticalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(32.dp)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(Color(0xFFEDE9FE)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Schedule,
+                            contentDescription = "Employee Attendance",
+                            tint = Color(0xFF6366F1),
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "Attendance",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = Color(0xFF475569),
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp,
+                        maxLines = 1
+                    )
+                }
+
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(
+                        onClick = onHide,
+                        modifier = Modifier.size(26.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.VisibilityOff,
+                            contentDescription = "Hide Attendance Widget",
+                            tint = Color(0xFF94A3B8),
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                    IconButton(
+                        onClick = onExpand,
+                        modifier = Modifier.size(26.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.KeyboardArrowDown,
+                            contentDescription = "Expand Attendance",
+                            tint = Color(0xFF6366F1),
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
+            }
+
+            Column {
+                Text(
+                    text = "$activeStaffCount Staff Active",
+                    style = MaterialTheme.typography.titleLarge.copy(
+                        fontWeight = FontWeight.ExtraBold,
+                        fontSize = 15.sp
+                    ),
+                    color = Color(0xFF0F172A),
+                    maxLines = 1
+                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text(
+                        text = "P: $presentCount",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color(0xFF16A34A),
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 11.sp
+                    )
+                    Text("•", color = Color.Gray, fontSize = 10.sp)
+                    Text(
+                        text = "A: $absentCount",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color(0xFFDC2626),
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 11.sp
+                    )
+                    Text("•", color = Color.Gray, fontSize = 10.sp)
+                    Text(
+                        text = "Expand",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color(0xFF6366F1),
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun AttendanceExpandedWidgetCard(
+    staffUsers: List<UserAccount>,
+    presentCount: Int,
+    absentCount: Int,
+    checkInTimeText: String,
+    checkOutTimeText: String,
+    onMinimize: () -> Unit,
+    onHide: () -> Unit,
+    onManageClick: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(22.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        border = BorderStroke(1.5.dp, Color(0xFF6366F1).copy(alpha = 0.5f)),
+        elevation = CardDefaults.cardElevation(defaultElevation = 3.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(Color(0xFFEDE9FE)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Schedule,
+                            contentDescription = "Employee Attendance",
+                            tint = Color(0xFF6366F1),
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Column {
+                        Text(
+                            text = "Employee Attendance & Staff Status",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = Color(0xFF0F172A)
+                        )
+                        Text(
+                            text = "Live shift tracking & staff roles",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color(0xFF64748B)
+                        )
+                    }
+                }
+
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(
+                        onClick = onMinimize,
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.KeyboardArrowUp,
+                            contentDescription = "Minimize Attendance",
+                            tint = Color(0xFF6366F1),
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+                    IconButton(
+                        onClick = onHide,
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.VisibilityOff,
+                            contentDescription = "Hide Attendance Widget",
+                            tint = Color(0xFF94A3B8),
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+            }
+
+            HorizontalDivider(color = Color(0xFFE2E8F0), thickness = 1.dp)
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = Color(0xFFDCFCE7),
+                    border = BorderStroke(1.dp, Color(0xFF86EFAC)),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(vertical = 8.dp, horizontal = 6.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Color(0xFF16A34A), modifier = Modifier.size(14.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Present", style = MaterialTheme.typography.labelSmall, color = Color(0xFF15803D), fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                        }
+                        Text("$presentCount Staff", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.ExtraBold, color = Color(0xFF14532D), fontSize = 13.sp)
+                    }
+                }
+
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = Color(0xFFFEE2E2),
+                    border = BorderStroke(1.dp, Color(0xFFFCA5A5)),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(vertical = 8.dp, horizontal = 6.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Cancel, contentDescription = null, tint = Color(0xFFDC2626), modifier = Modifier.size(14.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Absent", style = MaterialTheme.typography.labelSmall, color = Color(0xFFB91C1C), fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                        }
+                        Text("$absentCount Staff", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.ExtraBold, color = Color(0xFF7F1D1D), fontSize = 13.sp)
+                    }
+                }
+
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = Color(0xFFE0F2FE),
+                    border = BorderStroke(1.dp, Color(0xFF7DD3FC)),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(vertical = 8.dp, horizontal = 6.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.AccessTime, contentDescription = null, tint = Color(0xFF0284C7), modifier = Modifier.size(14.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Check-In", style = MaterialTheme.typography.labelSmall, color = Color(0xFF0369A1), fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                        }
+                        Text(checkInTimeText, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color(0xFF0C4A6E), fontSize = 12.sp)
+                    }
+                }
+
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = Color(0xFFFEF3C7),
+                    border = BorderStroke(1.dp, Color(0xFFFCD34D)),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(vertical = 8.dp, horizontal = 6.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.AccessTime, contentDescription = null, tint = Color(0xFFD97706), modifier = Modifier.size(14.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Check-Out", style = MaterialTheme.typography.labelSmall, color = Color(0xFFB45309), fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                        }
+                        Text(checkOutTimeText, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color(0xFF78350F), fontSize = 12.sp)
+                    }
+                }
+            }
+
+            Text(
+                text = "STAFF ROLES & ATTENDANCE STATUS",
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.ExtraBold,
+                color = Color(0xFF64748B),
+                letterSpacing = 0.5.sp
+            )
+
+            Column(
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                staffUsers.take(4).forEach { user ->
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = Color(0xFFF8FAFC),
+                        border = BorderStroke(1.dp, Color(0xFFE2E8F0)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(28.dp)
+                                        .clip(CircleShape)
+                                        .background(Color(0xFFEDE9FE)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Person,
+                                        contentDescription = null,
+                                        tint = Color(0xFF6366F1),
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Column {
+                                    Text(
+                                        text = user.name,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFF0F172A)
+                                    )
+                                    Text(
+                                        text = "Role: ${user.role}",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = Color(0xFF64748B)
+                                    )
+                                }
+                            }
+
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Surface(
+                                    shape = RoundedCornerShape(6.dp),
+                                    color = if (user.isActive) Color(0xFFDCFCE7) else Color(0xFFFEE2E2)
+                                ) {
+                                    Text(
+                                        text = if (user.isActive) "Present" else "Absent",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (user.isActive) Color(0xFF15803D) else Color(0xFFB91C1C),
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            Button(
+                onClick = onManageClick,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6366F1))
+            ) {
+                Icon(Icons.Default.Schedule, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(modifier = Modifier.width(6.dp))
+                Text("Manage Staff & Full Attendance", fontWeight = FontWeight.Bold)
+            }
+        }
+    }
+}
+
+@Composable
+fun ShowAttendanceBanner(
+    onShow: () -> Unit
+) {
+    Surface(
+        shape = RoundedCornerShape(14.dp),
+        color = Color(0xFFEDE9FE).copy(alpha = 0.6f),
+        border = BorderStroke(1.dp, Color(0xFFC7D2FE)),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onShow() }
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Default.Visibility,
+                    contentDescription = "Show Attendance",
+                    tint = Color(0xFF4F46E5),
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(modifier = Modifier.width(10.dp))
+                Column {
+                    Text(
+                        text = "Employee Attendance Widget Hidden",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF3730A3)
+                    )
+                    Text(
+                        text = "Tap to restore Attendance widget to Dashboard",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color(0xFF6366F1)
+                    )
+                }
+            }
+            Surface(
+                shape = RoundedCornerShape(8.dp),
+                color = Color(0xFF4F46E5)
+            ) {
+                Text(
+                    text = "Show Attendance",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                )
+            }
+        }
+    }
 }

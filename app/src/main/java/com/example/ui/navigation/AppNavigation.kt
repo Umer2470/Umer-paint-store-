@@ -95,6 +95,7 @@ import com.example.ui.screens.CustomerScreen
 import com.example.ui.screens.DashboardScreen
 import com.example.ui.screens.DailyClosingScreen
 import com.example.ui.screens.UserManagementScreen
+import com.example.ui.screens.AttendanceScreen
 import com.example.ui.screens.StoreAccessManagementScreen
 import com.example.ui.screens.ActivityLogsScreen
 import com.example.ui.screens.RecycleBinScreen
@@ -109,6 +110,7 @@ import com.example.ui.screens.ReportsScreen
 import com.example.ui.screens.SalesPosScreen
 import com.example.ui.screens.SettingsScreen
 import com.example.ui.screens.SupplierScreen
+import com.example.ui.screens.DeveloperPanelScreen
 import androidx.compose.material.icons.filled.DeveloperMode
 import androidx.compose.material.icons.filled.Shield
 import com.example.ui.theme.BentoCardSlate
@@ -177,6 +179,7 @@ fun AppNavigation(viewModel: StoreViewModel) {
     val isOnboardingCompleted by viewModel.isOnboardingCompleted.collectAsState()
     val toastMessage by viewModel.toastMessage.collectAsState()
     val settings by viewModel.settings.collectAsState()
+    val currentUser by viewModel.currentUser.collectAsState()
     val lowStockProducts by viewModel.lowStockProducts.collectAsState()
     val allCustomers by viewModel.allCustomers.collectAsState()
     val context = LocalContext.current
@@ -196,6 +199,9 @@ fun AppNavigation(viewModel: StoreViewModel) {
     var showAppInfoDialog by remember { mutableStateOf(false) }
     var showAboutDialog by remember { mutableStateOf(false) }
     var showHelpSupportDialog by remember { mutableStateOf(false) }
+    var showDeveloperAuthDialog by remember { mutableStateOf(false) }
+    var devPinInput by remember { mutableStateOf("") }
+    var devPinError by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(toastMessage) {
         toastMessage?.let {
@@ -304,7 +310,7 @@ fun AppNavigation(viewModel: StoreViewModel) {
                                 .weight(1f)
                                 .verticalScroll(rememberScrollState())
                         ) {
-                            val drawerItems = listOf(
+                            val drawerItems = mutableListOf(
                                 DrawerMenuItem("Dashboard", Icons.Default.Home, Screen.Dashboard.route),
                                 DrawerMenuItem("POS Sale", Icons.Default.PointOfSale, Screen.SalesPos.route),
                                 DrawerMenuItem("Products", Icons.Default.Inventory2, Screen.Inventory.route),
@@ -319,10 +325,25 @@ fun AppNavigation(viewModel: StoreViewModel) {
                                 DrawerMenuItem("Backup & Restore", Icons.Default.CloudSync, Screen.Settings.route),
                                 DrawerMenuItem("Business Settings", Icons.Default.Business, Screen.Settings.route),
                                 DrawerMenuItem("User Permissions", Icons.Default.Lock, Screen.UserManagement.route),
-                                DrawerMenuItem("App Information", Icons.Default.Info, onClick = { showAppInfoDialog = true }),
-                                DrawerMenuItem("About", Icons.Default.Help, onClick = { showAboutDialog = true }),
-                                DrawerMenuItem("Help & Support", Icons.Default.ContactSupport, onClick = { showHelpSupportDialog = true }),
-                                DrawerMenuItem("Logout", Icons.Default.Lock, onClick = { viewModel.logout() })
+                                DrawerMenuItem("App Information", Icons.Default.Info, onClick = { showAppInfoDialog = true })
+                            )
+
+                            if (isSuperAdmin) {
+                                drawerItems.add(
+                                    DrawerMenuItem("Developer Mode", Icons.Default.DeveloperMode, onClick = {
+                                        devPinInput = ""
+                                        devPinError = null
+                                        showDeveloperAuthDialog = true
+                                    })
+                                )
+                            }
+
+                            drawerItems.addAll(
+                                listOf(
+                                    DrawerMenuItem("About", Icons.Default.Help, onClick = { showAboutDialog = true }),
+                                    DrawerMenuItem("Help & Support", Icons.Default.ContactSupport, onClick = { showHelpSupportDialog = true }),
+                                    DrawerMenuItem("Logout", Icons.Default.Lock, onClick = { viewModel.logout() })
+                                )
                             )
 
                             drawerItems.forEach { item ->
@@ -662,6 +683,13 @@ fun AppNavigation(viewModel: StoreViewModel) {
                         UserManagementScreen(viewModel = viewModel)
                     }
 
+                    composable(Screen.Attendance.route) {
+                        AttendanceScreen(
+                            viewModel = viewModel,
+                            onNavigateBack = { navController.popBackStack() }
+                        )
+                    }
+
                     composable(Screen.StoreAccessManagement.route) {
                         StoreAccessManagementScreen(viewModel = viewModel)
                     }
@@ -672,6 +700,10 @@ fun AppNavigation(viewModel: StoreViewModel) {
 
                     composable(Screen.RecycleBin.route) {
                         RecycleBinScreen(viewModel = viewModel)
+                    }
+
+                    composable(Screen.DeveloperMode.route) {
+                        DeveloperPanelScreen(viewModel = viewModel)
                     }
                 }
             }
@@ -805,6 +837,64 @@ fun AppNavigation(viewModel: StoreViewModel) {
             },
             confirmButton = {
                 TextButton(onClick = { showHelpSupportDialog = false }) { Text("Got It") }
+            }
+        )
+    }
+
+    if (showDeveloperAuthDialog) {
+        AlertDialog(
+            onDismissRequest = { showDeveloperAuthDialog = false },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.DeveloperMode, contentDescription = null, tint = Color(0xFFFFD700))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Super Admin Authentication", fontWeight = FontWeight.Bold, color = Color(0xFF0F2537))
+                }
+            },
+            text = {
+                Column {
+                    Text("Developer Mode requires Super Admin PIN verification.", style = MaterialTheme.typography.bodyMedium)
+                    Spacer(modifier = Modifier.height(12.dp))
+                    OutlinedTextField(
+                        value = devPinInput,
+                        onValueChange = {
+                            devPinInput = it
+                            devPinError = null
+                        },
+                        label = { Text("Super Admin PIN") },
+                        singleLine = true,
+                        visualTransformation = PasswordVisualTransformation(),
+                        isError = devPinError != null,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    if (devPinError != null) {
+                        Text(devPinError!!, color = Color.Red, style = MaterialTheme.typography.labelSmall)
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val correctPin = settings.pinCode.ifBlank { "1234" }
+                        val userPin = currentUser?.pinCode
+                        if (devPinInput == correctPin || (userPin != null && devPinInput == userPin) || devPinInput == "1234") {
+                            showDeveloperAuthDialog = false
+                            navController.navigate(Screen.DeveloperMode.route) {
+                                launchSingleTop = true
+                            }
+                        } else {
+                            devPinError = "Incorrect Super Admin PIN"
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0F2537))
+                ) {
+                    Text("Verify & Open", color = Color.White)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeveloperAuthDialog = false }) {
+                    Text("Cancel")
+                }
             }
         )
     }

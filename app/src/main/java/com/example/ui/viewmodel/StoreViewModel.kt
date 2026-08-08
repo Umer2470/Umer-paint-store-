@@ -27,6 +27,7 @@ import com.example.data.entity.TenantAccount
 import com.example.data.entity.SubscriptionPlan
 import com.example.data.entity.RecycleBinItem
 import com.example.data.entity.SuperAdminRecovery
+import com.example.data.entity.AttendanceRecord
 import com.example.util.RecoveryUtils
 import com.example.util.SecurityUtils
 import com.example.util.AppFeature
@@ -104,7 +105,7 @@ data class PurchaseCartItem(
 class StoreViewModel(application: Application) : AndroidViewModel(application) {
 
     private val db = StoreDatabase.getInstance(application)
-    private val repository = StoreRepository(db.storeDao())
+    private val repository = StoreRepository(db.storeDao(), application)
 
     private val _isRefreshing = MutableStateFlow(false)
     val isRefreshing: StateFlow<Boolean> = _isRefreshing.asStateFlow()
@@ -454,6 +455,33 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private val prefs = application.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
+
+    // Attendance Widget State Persistence (Default: Minimized, Not Hidden)
+    private val _isAttendanceMinimized = MutableStateFlow(
+        prefs.getBoolean("is_attendance_minimized", true)
+    )
+    val isAttendanceMinimized: StateFlow<Boolean> = _isAttendanceMinimized.asStateFlow()
+
+    private val _isAttendanceHidden = MutableStateFlow(
+        prefs.getBoolean("is_attendance_hidden", false)
+    )
+    val isAttendanceHidden: StateFlow<Boolean> = _isAttendanceHidden.asStateFlow()
+
+    fun toggleAttendanceMinimized() {
+        val newValue = !_isAttendanceMinimized.value
+        prefs.edit().putBoolean("is_attendance_minimized", newValue).apply()
+        _isAttendanceMinimized.value = newValue
+    }
+
+    fun setAttendanceMinimized(minimized: Boolean) {
+        prefs.edit().putBoolean("is_attendance_minimized", minimized).apply()
+        _isAttendanceMinimized.value = minimized
+    }
+
+    fun setAttendanceHidden(hidden: Boolean) {
+        prefs.edit().putBoolean("is_attendance_hidden", hidden).apply()
+        _isAttendanceHidden.value = hidden
+    }
 
     private val _isOnboardingCompleted = MutableStateFlow(
         prefs.getBoolean("is_onboarding_completed", false)
@@ -2696,6 +2724,126 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
             repository.clearRecycleBin()
             logActivity("CLEAR_RECYCLE_BIN", "Emptied entire Recycle Bin")
             showToast("Recycle Bin emptied completely.")
+        }
+    }
+
+    // --- ATTENDANCE MANAGEMENT ---
+    val allAttendanceRecords: StateFlow<List<AttendanceRecord>> = repository.allAttendanceRecords
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    fun checkInEmployee(userId: Long, userName: String, userRole: String, notes: String = "") {
+        viewModelScope.launch {
+            val dateStr = SimpleDateFormat("yyyy-MM-DD", Locale.getDefault()).format(Date())
+            val existing = repository.getAttendanceForUserAndDate(userId, dateStr)
+            val storeId = selectedStoreId.value.let { if (it == 0L) 1L else it }
+            val now = System.currentTimeMillis()
+
+            if (existing != null) {
+                val updated = existing.copy(
+                    checkInTime = existing.checkInTime ?: now,
+                    status = "PRESENT",
+                    notes = if (notes.isNotBlank()) notes else existing.notes
+                )
+                repository.updateAttendanceRecord(updated)
+            } else {
+                val newRec = AttendanceRecord(
+                    storeId = storeId,
+                    userId = userId,
+                    userName = userName,
+                    userRole = userRole,
+                    dateStr = dateStr,
+                    status = "PRESENT",
+                    checkInTime = now,
+                    notes = notes
+                )
+                repository.saveAttendanceRecord(newRec)
+            }
+            logActivity("ATTENDANCE_CHECKIN", "Checked in employee: $userName")
+            showToast("Checked In $userName successfully!")
+        }
+    }
+
+    fun checkOutEmployee(userId: Long, notes: String = "") {
+        viewModelScope.launch {
+            val dateStr = SimpleDateFormat("yyyy-MM-DD", Locale.getDefault()).format(Date())
+            val existing = repository.getAttendanceForUserAndDate(userId, dateStr)
+            val now = System.currentTimeMillis()
+
+            if (existing != null && existing.checkInTime != null) {
+                val workedMs = now - existing.checkInTime
+                val workedMins = workedMs / (1000 * 60)
+                val overtimeMins = if (workedMins > 480) workedMins - 480 else 0L
+
+                val updated = existing.copy(
+                    checkOutTime = now,
+                    totalWorkingMinutes = workedMins,
+                    overtimeMinutes = overtimeMins,
+                    notes = if (notes.isNotBlank()) notes else existing.notes
+                )
+                repository.updateAttendanceRecord(updated)
+                logActivity("ATTENDANCE_CHECKOUT", "Checked out employee: ${existing.userName}")
+                showToast("Checked Out ${existing.userName} successfully! Worked: ${workedMins / 60}h ${workedMins % 60}m")
+            } else {
+                showToast("No active check-in found for today.")
+            }
+        }
+    }
+
+    fun startBreakEmployee(userId: Long) {
+        viewModelScope.launch {
+            val dateStr = SimpleDateFormat("yyyy-MM-DD", Locale.getDefault()).format(Date())
+            val existing = repository.getAttendanceForUserAndDate(userId, dateStr)
+            val now = System.currentTimeMillis()
+
+            if (existing != null) {
+                val updated = existing.copy(breakStartTime = now)
+                repository.updateAttendanceRecord(updated)
+                showToast("Break started for ${existing.userName}")
+            } else {
+                showToast("Please check in first before starting break.")
+            }
+        }
+    }
+
+    fun endBreakEmployee(userId: Long) {
+        viewModelScope.launch {
+            val dateStr = SimpleDateFormat("yyyy-MM-DD", Locale.getDefault()).format(Date())
+            val existing = repository.getAttendanceForUserAndDate(userId, dateStr)
+            val now = System.currentTimeMillis()
+
+            if (existing != null) {
+                val updated = existing.copy(breakEndTime = now)
+                repository.updateAttendanceRecord(updated)
+                showToast("Break ended for ${existing.userName}")
+            } else {
+                showToast("No active break found.")
+            }
+        }
+    }
+
+    fun markEmployeeAttendanceStatus(userId: Long, userName: String, userRole: String, status: String, notes: String = "") {
+        viewModelScope.launch {
+            val dateStr = SimpleDateFormat("yyyy-MM-DD", Locale.getDefault()).format(Date())
+            val existing = repository.getAttendanceForUserAndDate(userId, dateStr)
+            val storeId = selectedStoreId.value.let { if (it == 0L) 1L else it }
+
+            if (existing != null) {
+                val updated = existing.copy(status = status, notes = notes)
+                repository.updateAttendanceRecord(updated)
+            } else {
+                val newRec = AttendanceRecord(
+                    storeId = storeId,
+                    userId = userId,
+                    userName = userName,
+                    userRole = userRole,
+                    dateStr = dateStr,
+                    status = status,
+                    notes = notes
+                )
+                repository.saveAttendanceRecord(newRec)
+            }
+            logActivity("ATTENDANCE_MARKED", "Marked $userName as $status")
+            showToast("Marked $userName as $status")
         }
     }
 }

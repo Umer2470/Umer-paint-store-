@@ -30,6 +30,7 @@ import com.example.data.entity.StoreProfile
 import com.example.data.entity.UserStorePermission
 import com.example.data.entity.RecycleBinItem
 import com.example.data.entity.SuperAdminRecovery
+import com.example.data.entity.AttendanceRecord
 
 @Dao
 interface StoreDao {
@@ -408,4 +409,29 @@ interface StoreDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertSuperAdminRecovery(recovery: SuperAdminRecovery)
+
+    // --- ATTENDANCE MANAGEMENT ---
+    @Query("SELECT * FROM attendance_records ORDER BY timestamp DESC")
+    fun getAllAttendanceRecords(): Flow<List<AttendanceRecord>>
+
+    @Query("SELECT * FROM attendance_records WHERE storeId = :storeId ORDER BY timestamp DESC")
+    fun getAttendanceRecordsForStore(storeId: Long): Flow<List<AttendanceRecord>>
+
+    @Query("SELECT * FROM attendance_records WHERE userId = :userId ORDER BY timestamp DESC")
+    fun getAttendanceRecordsForUser(userId: Long): Flow<List<AttendanceRecord>>
+
+    @Query("SELECT * FROM attendance_records WHERE dateStr = :dateStr")
+    fun getAttendanceRecordsForDate(dateStr: String): Flow<List<AttendanceRecord>>
+
+    @Query("SELECT * FROM attendance_records WHERE userId = :userId AND dateStr = :dateStr LIMIT 1")
+    suspend fun getAttendanceForUserAndDate(userId: Long, dateStr: String): AttendanceRecord?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAttendanceRecord(record: AttendanceRecord): Long
+
+    @Update
+    suspend fun updateAttendanceRecord(record: AttendanceRecord)
+
+    @Delete
+    suspend fun deleteAttendanceRecord(record: AttendanceRecord)
 }

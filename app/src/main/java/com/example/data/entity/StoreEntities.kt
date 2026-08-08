@@ -429,4 +429,33 @@ data class RecycleBinItem(
     val deletedAt: Long = System.currentTimeMillis()
 )
 
+@Entity(
+    tableName = "attendance_records",
+    indices = [
+        Index("tenantId"),
+        Index("storeId"),
+        Index("userId"),
+        Index("dateStr"),
+        Index("timestamp")
+    ]
+)
+data class AttendanceRecord(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val tenantId: String = "TENANT_DEFAULT",
+    val storeId: Long = 1L,
+    val userId: Long,
+    val userName: String,
+    val userRole: String = "EMPLOYEE",
+    val dateStr: String, // "YYYY-MM-DD"
+    val status: String = "PRESENT", // "PRESENT", "ABSENT", "LEAVE", "LATE"
+    val checkInTime: Long? = null,
+    val checkOutTime: Long? = null,
+    val breakStartTime: Long? = null,
+    val breakEndTime: Long? = null,
+    val totalWorkingMinutes: Long = 0,
+    val overtimeMinutes: Long = 0,
+    val notes: String = "",
+    val timestamp: Long = System.currentTimeMillis()
+)
+
 

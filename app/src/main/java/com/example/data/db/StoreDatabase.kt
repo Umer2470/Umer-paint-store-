@@ -27,6 +27,7 @@ import com.example.data.entity.TenantAccount
 import com.example.data.entity.SubscriptionPlan
 import com.example.data.entity.RecycleBinItem
 import com.example.data.entity.SuperAdminRecovery
+import com.example.data.entity.AttendanceRecord
 
 @Database(
     entities = [
@@ -50,9 +51,10 @@ import com.example.data.entity.SuperAdminRecovery
         DailyClosing::class,
         ActivityLog::class,
         RecycleBinItem::class,
-        SuperAdminRecovery::class
+        SuperAdminRecovery::class,
+        AttendanceRecord::class
     ],
-    version = 16,
+    version = 17,
     exportSchema = false
 )
 abstract class StoreDatabase : RoomDatabase() {

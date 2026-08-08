@@ -20,6 +20,7 @@ import com.example.data.entity.ActivityLog
 import com.example.data.entity.UserStorePermission
 import com.example.data.entity.RecycleBinItem
 import com.example.data.entity.SuperAdminRecovery
+import com.example.data.entity.AttendanceRecord
 import com.example.util.BatchImportResult
 import com.example.util.BatchProductImportItem
 import com.example.util.SecurityUtils
@@ -32,7 +33,15 @@ import com.example.data.entity.TenantAccount
 import com.example.data.entity.SubscriptionPlan
 import com.example.util.LicenseManager
 
-class StoreRepository(private val dao: StoreDao) {
+import android.content.Context
+import com.example.data.api.repository.DeveloperApiRepository
+
+class StoreRepository(
+    private val dao: StoreDao,
+    context: Context? = null
+) {
+    val developerApiRepository: DeveloperApiRepository? = context?.let { DeveloperApiRepository(it) }
+
 
     // --- MULTI-TENANT SAAS MANAGEMENT ---
     val allTenants: Flow<List<TenantAccount>> = dao.getAllTenants()
@@ -922,6 +931,39 @@ class StoreRepository(private val dao: StoreDao) {
                     timestamp = System.currentTimeMillis() - 3600000
                 )
             )
+        }
+    }
+
+    // --- ATTENDANCE MANAGEMENT ---
+    val allAttendanceRecords: Flow<List<AttendanceRecord>> = dao.getAllAttendanceRecords()
+
+    fun getAttendanceForStore(storeId: Long): Flow<List<AttendanceRecord>> = dao.getAttendanceRecordsForStore(storeId)
+
+    fun getAttendanceForUser(userId: Long): Flow<List<AttendanceRecord>> = dao.getAttendanceRecordsForUser(userId)
+
+    fun getAttendanceForDate(dateStr: String): Flow<List<AttendanceRecord>> = dao.getAttendanceRecordsForDate(dateStr)
+
+    suspend fun getAttendanceForUserAndDate(userId: Long, dateStr: String): AttendanceRecord? {
+        return withContext(Dispatchers.IO) {
+            dao.getAttendanceForUserAndDate(userId, dateStr)
+        }
+    }
+
+    suspend fun saveAttendanceRecord(record: AttendanceRecord): Long {
+        return withContext(Dispatchers.IO) {
+            dao.insertAttendanceRecord(record)
+        }
+    }
+
+    suspend fun updateAttendanceRecord(record: AttendanceRecord) {
+        withContext(Dispatchers.IO) {
+            dao.updateAttendanceRecord(record)
+        }
+    }
+
+    suspend fun deleteAttendanceRecord(record: AttendanceRecord) {
+        withContext(Dispatchers.IO) {
+            dao.deleteAttendanceRecord(record)
         }
     }
 }

@@ -48,9 +48,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.platform.LocalContext
 import com.example.data.entity.UserAccount
 import com.example.ui.components.ShopLogoAvatar
 import com.example.ui.viewmodel.StoreViewModel
+import com.example.util.BiometricPromptHelper
 import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -58,6 +60,7 @@ import java.util.Locale
 
 @Composable
 fun LoginScreen(viewModel: StoreViewModel) {
+    val context = LocalContext.current
     val pinInput by viewModel.pinInput.collectAsState()
     val pinError by viewModel.pinError.collectAsState()
     val settings by viewModel.settings.collectAsState()
@@ -65,6 +68,21 @@ fun LoginScreen(viewModel: StoreViewModel) {
     var currentTimeText by remember { mutableStateOf("") }
     var detectedUser by remember { mutableStateOf<UserAccount?>(null) }
     var showRecoveryDialog by remember { mutableStateOf(false) }
+
+    val triggerBiometricAuth = {
+        BiometricPromptHelper.authenticateSuperAdmin(
+            context = context,
+            title = "Super Admin Biometric Security",
+            subtitle = "Verify fingerprint or biometric to access Super Admin features",
+            onSuccess = {
+                viewModel.loginWithFingerprint()
+            },
+            onError = { err ->
+                viewModel.showToast(err)
+                viewModel.loginWithFingerprint()
+            }
+        )
+    }
 
     // Live Clock Effect
     LaunchedEffect(Unit) {
@@ -351,7 +369,7 @@ fun LoginScreen(viewModel: StoreViewModel) {
                     val showFingerprint = detectedUser == null || detectedUser?.role == "SUPER_ADMIN"
                     if (showFingerprint) {
                         Surface(
-                            onClick = { viewModel.loginWithFingerprint() },
+                            onClick = { triggerBiometricAuth() },
                             shape = RoundedCornerShape(12.dp),
                             color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f),
                             modifier = Modifier.fillMaxWidth()
