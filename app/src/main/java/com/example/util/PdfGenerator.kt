@@ -35,7 +35,12 @@ object PdfGenerator {
         A4, THERMAL_58MM, THERMAL_80MM
     }
 
-    fun generateAndGetFile(
+    /**
+     * Generates a printable PDF invoice from a sale transaction,
+     * including store details, itemized list, subtotal, tax, discount, and total amount,
+     * using standard Android PdfDocument library.
+     */
+    fun generatePrintablePdfInvoice(
         context: Context,
         sale: Sale,
         items: List<SaleItem>,
@@ -48,6 +53,16 @@ object PdfGenerator {
             settings = settings
         )
         return generateFromInvoice(context, formattedInvoice, format)
+    }
+
+    fun generateAndGetFile(
+        context: Context,
+        sale: Sale,
+        items: List<SaleItem>,
+        settings: StoreSettings,
+        format: ReceiptFormat = ReceiptFormat.A4
+    ): File? {
+        return generatePrintablePdfInvoice(context, sale, items, settings, format)
     }
 
     fun generateFromInvoice(
